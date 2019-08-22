@@ -1,0 +1,201 @@
+---
+title: "Create genome metadata"
+author: 
+- name: Rick Farouni
+  affiliation:
+  - &cruk Génome Québec Innovation Centre, McGill University, Montreal, Canada
+date: '`r format(Sys.Date(), "%Y-%B-%d")`'
+output:
+  html_notebook:
+    df_print: paged
+    code_folding: show
+    toc: no
+    toc_float: 
+      collapsed: false
+      smooth_scroll: false
+---
+
+
+# Prepare analysis workflow
+
+### Set filepaths and parameters
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file(),
+                     fig.width=15,
+                     digit=5,
+                     scipen=8)
+options(readr.show_progress = FALSE,
+        digits=5, 
+        scipen=8)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(AnnotationHub)
+library(biomaRt)
+```
+
+## Define functions
+
+```{r}
+get_transcriptome <- function(ah_id) {
+  ah <- AnnotationHub()
+  edb <- ah[[ah_id]]
+  seqlevelsStyle(edb) <- "UCSC"
+  standard_chroms <- standardChromosomes(edb, species = organism(edb))
+  edb <- addFilter(edb, SeqNameFilter(standard_chroms))
+  return(edb)
+  
+}
+
+get_gc_content <- function(dataset){
+  
+  # searchAttributes(mart, pattern = "UCSC")
+  #listDatasets(mart)
+  
+  mart <- useMart("ensembl", 
+                host="http://jul2019.archive.ensembl.org")
+  mart <- useDataset(dataset,
+                   mart = mart)
+  gc_content_ens97 <-  getBM(attributes=c(
+                         "ensembl_gene_id",
+                         'percentage_gene_gc_content'),
+            mart = mart)
+  
+  gc_content_ens97 <- 
+    gc_content_ens97%>%
+   dplyr::rename(gene_id="ensembl_gene_id",
+                 perc_gene_gc="percentage_gene_gc_content")
+
+  return(gc_content_ens97)
+}
+
+get_gene_metadata <- function(edb, dataset) {
+  
+   gene_meta  <- 
+   genes(edb) %>% 
+   as.data.frame() %>%
+   dplyr::select(gene_id,
+                 width,
+                 gene_name, 
+                 gene_biotype) %>%
+   dplyr::rename(gene_len="width")
+   
+  gc_content_ens97 <- get_gc_content(dataset)
+
+  gene_meta <- 
+  left_join(gene_meta,
+            gc_content_ens97,
+            by="gene_id")
+   
+   return(gene_meta)
+   
+}
+
+
+get_tx_metadata <- function(edb) {
+  
+tx_meta <- 
+  transcripts(edb,
+              columns=c("tx_id",
+                        "tx_biotype",
+                        "gene_id",
+                        "tx_id_version"))
+
+tx_meta <- 
+  as.data.frame(tx_meta) %>%
+  as_tibble() %>%
+  dplyr::select(-start,-end,-strand) %>%
+  dplyr::rename(premrna_len="width")
+
+tx_lens <- 
+  transcriptLengths(edb,
+                    with.cds_len=TRUE,
+                    with.utr5_len=TRUE,
+                    with.utr3_len=TRUE) %>%
+  dplyr::select(tx_id, nexon:utr3_len )
+
+tx_meta <- 
+  left_join(tx_meta,
+            tx_lens,
+            by="tx_id")
+
+# get intronic lengths and counts
+
+introns_by_tx <- 
+  intronsByTranscript(edb)
+
+
+num_introns <- 
+  lapply(introns_by_tx, length) %>%
+  unlist() %>%
+  enframe( name = "tx_id",
+           value = "nintron")
+
+tx_meta <- 
+  left_join(tx_meta,
+            num_introns,
+            by="tx_id")
+
+tx_meta <- 
+  tx_meta %>%
+  mutate(intronic_len=premrna_len -tx_len)  %>%
+  dplyr::rename(exonic_len="tx_len")
+
+
+return(tx_meta)
+}
+
+
+create_tx_gene_metadata <- function(ah_id, dataset){
+
+  edb <- get_transcriptome(ah_id)
+  gene_meta <- get_gene_metadata(edb,
+                               dataset)
+  tx_meta <- get_tx_metadata(edb)
+  tx_gene_meta <- 
+  left_join(tx_meta,
+            gene_meta,
+            by="gene_id")
+  tx_gene_meta <- 
+  tx_gene_meta %>%
+   dplyr::select(tx_id, gene_name, gene_len, premrna_len, intronic_len, exonic_len,
+                 cds_len, utr5_len, utr3_len, nexon, nintron, perc_gene_gc,
+                 gene_id, seqnames, gene_biotype, tx_biotype, tx_id_version)
+  return(tx_gene_meta)
+}
+
+```
+
+
+## Create genome metadata tables
+
+```{r}
+
+mm10_tx_gene_meta <- 
+  create_tx_gene_metadata("AH73905",
+                          "mmusculus_gene_ensembl")
+mm10_tx_gene_meta 
+```
+
+
+```{r}
+hg38_tx_gene_meta <- 
+  create_tx_gene_metadata("AH73881",
+                          "hsapiens_gene_ensembl")
+hg38_tx_gene_meta 
+```
+
+## Write to file
+
+```{r}
+write_csv( mm10_tx_gene_meta, "./data/mm_ens97_metadata.txt")
+write_csv( hg38_tx_gene_meta, "./data/hg_ens97_metadata.txt")
+
+```
+
+```{r}
+sessionInfo()
+```
+

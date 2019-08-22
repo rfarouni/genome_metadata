@@ -1,0 +1,208 @@
+---
+title: "Explore mouse metadata"
+author: 
+- name: Rick Farouni
+  affiliation:
+  - &cruk Department of Human Genetics, McGill University,  Montreal, Canada
+date: '`r format(Sys.Date(), "%Y-%B-%d")`'
+output: html_notebook
+---
+
+
+# Preparations
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file(), 
+                     fig.width=14,
+                     fig.height=14)
+set.seed(42)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+```
+
+
+## Read data
+
+
+
+```{r}
+mm10_tx_gene_meta <- read_csv("./data/mm_ens97_metadata.txt")
+```
+
+## Extract Gene metadata
+
+```{r}
+mm10_gene_meta <- 
+  mm10_tx_gene_meta %>%
+         dplyr::group_by(gene_id) %>%
+         dplyr::slice(1) %>%
+  select(gene_name, gene_len, perc_gene_gc, gene_id, seqnames, gene_biotype)
+mm10_gene_meta
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.height=4, fig.width=7}
+ggplot(total_length_by_tx ,
+       aes(percentage_gene_gc_content)) +
+  geom_histogram(bins = 170)  
+```
+
+
+```{r, fig.width=20}
+ggplot(total_length_by_tx %>%
+         dplyr::group_by(GENEID) %>%
+         dplyr::slice(1), 
+       aes(percentage_gene_gc_content, gene_len))+
+  geom_point(size=0.8,
+              alpha=0.7) +
+  geom_density_2d() +  
+   scale_y_log10() +
+   theme(legend.position="none")
+```
+
+
+
+
+
+
+```{r}
+total_length_by_tx_protein <-
+  total_length_by_tx %>% 
+  dplyr::filter(GENEBIOTYPE=="protein_coding")
+total_length_by_tx_protein
+```
+
+```{r message=FALSE, warning=FALSE, fig.height=4, fig.width=7}
+ggplot(total_length_by_tx_protein %>%
+         dplyr::group_by(GENEID) %>%
+         dplyr::slice(1),
+       aes(percentage_gene_gc_content)) +
+  geom_histogram(bins = 150)  
+```
+
+
+
+```{r, fig.width=20}
+ggplot(total_length_by_tx_protein%>%
+         dplyr::group_by(GENEID) %>%
+         dplyr::slice(1), 
+       aes(percentage_gene_gc_content, gene_len))+
+  geom_point(size=0.8,
+              alpha=0.7) +
+  geom_density_2d() +  
+   scale_y_log10() +
+   theme(legend.position="none")
+```
+
+
+```{r, fig.width=20}
+ggplot(total_length_by_tx_protein) +
+  geom_point( aes(exonic_len, intronic_len, colour=percentage_gene_gc_content),
+              size=0.05,
+              alpha=0.1)  +  
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~SEQNAME)
+
+```
+
+```{r, fig.width=20}
+ggplot(total_length_by_tx_protein %>%
+         dplyr::filter(SEQNAME=="chr22") )+
+  geom_point( aes(exonic_len, intronic_len, colour=gene_len),
+              size=0.8,
+              alpha=0.7) +
+  geom_density_2d(aes(exonic_len, intronic_len)) +  
+  scale_x_log10() +
+   scale_y_log10() +
+   theme(legend.position="none")
+```
+
+## Number of transcipts by gene
+
+```{r}
+count_tx_by_gene <-
+  total_length_by_tx_protein %>%
+  count(GENEID, GENENAME) %>%
+  arrange(-n)
+count_tx_by_gene 
+```
+
+Some gene names are not unique
+
+```{r}
+duplicated_gene_names <-
+  count_tx_by_gene%>%
+  dplyr::filter( duplicated(GENENAME ))%>%
+  pull(GENENAME)
+duplicated_gene_names
+```
+
+```{r}
+count_tx_by_gene %>%
+  dplyr::filter(GENENAME%in% duplicated_gene_names ) %>%
+  arrange(GENENAME)
+```
+
+
+
+```{r message=FALSE, warning=FALSE, fig.height=4, fig.width=7}
+ggplot(count_tx_by_gene, aes(n)) +
+  geom_histogram(bins = 100)  
+```
+```{r}
+top_genes <- 
+  count_tx_by_gene %>%
+  top_n(20) %>%
+  pull(GENENAME)
+top_genes
+```
+
+
+```{r fig.height=8}
+ggplot(total_length_by_tx_protein %>% 
+         dplyr::filter(GENENAME%in% top_genes))+
+  geom_point( aes(exonic_len, intronic_len, colour=gene_len),
+              size=0.8,
+              alpha=0.7) +
+  facet_wrap(~GENENAME)
+```
+
+
+```{r}
+ggplot(total_length_by_tx_protein %>% 
+         dplyr::filter(GENENAME=="TSC2"))+
+  geom_point( aes(exonic_len, intronic_len),
+              size=0.8,
+              alpha=0.7)
+```
+
+
+```{r}
+single_transcript_genes <-
+  count_tx_by_gene %>% 
+  dplyr::filter(n==1) %>% 
+  pull(GENENAME)
+
+```
+
+
+
+```{r fig.height=8}
+ggplot(total_length_by_tx_protein %>% 
+         dplyr::filter(GENENAME%in% single_transcript_genes ))+
+  geom_point( aes(exonic_len, intronic_len, colour=gene_len),
+              size=0.8,
+              alpha=0.7)  +  
+  scale_x_log10() +
+   scale_y_log10()
+```
+
+
+
+```{r}
+sessionInfo()
+```
