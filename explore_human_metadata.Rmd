@@ -1,5 +1,5 @@
 ---
-title: "Examine exon to intron ratios"
+title: "Explore human metadata"
 author: 
 - name: Rick Farouni
   affiliation:
@@ -21,245 +21,202 @@ set.seed(42)
 
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
-library(AnnotationHub)
-library(biomaRt)
 ```
 
 
-### Get exon and intron lengths
+## Read data
+
+
+
+```{r message=TRUE}
+tx_gene_meta <- read_csv("./data/hg_ens97_metadata.txt")
+tx_gene_meta
+```
+
+# Gene Level 
+
+## Extract Gene metadata
 
 ```{r}
-get_transcriptome <- function(ah_id) {
-  ah <- AnnotationHub()
-  edb <- ah[[ah_id]]
-  seqlevelsStyle(edb) <- "UCSC"
-  standard_chroms <- standardChromosomes(edb, species = organism(edb))
-  edb <- addFilter(edb, SeqNameFilter(standard_chroms))
-  return(edb)
-  
-}
-
-get_length <- function(x){
-  sum(
-    width(x))
-}
-
+gene_meta <- 
+  tx_gene_meta %>%
+         dplyr::group_by(gene_id) %>%
+         dplyr::slice(1) %>%
+  ungroup() %>%
+  select(gene_name, gene_len, perc_gene_gc, gene_id, seqnames, gene_biotype)
+gene_meta
 ```
 
-
-
-```{r}
-edb_hg <- get_transcriptome("AH73881")
-edb_hg
-```
-```{r}
-columns(edb_hg)
-```
-
-```{r}
-df_hg <- 
-  AnnotationDbi::select(edb_hg,
-                        AnnotationDbi::keys(edb_hg,
-                                                keytype = "TXID"),
-                            keytype = "TXID",
-                            columns = c("GENEID", 
-                                        "GENENAME",
-                                        "GENEBIOTYPE",
-                                        "SEQNAME",
-                                        "GENESEQSTART",
-                                        "GENESEQEND")) 
-df_hg
-```
-
-
-
-
-```{r}
-#exons_by_gene <- exonsBy(edb_hg, by="gene")
-exons_by_tx <- exonsBy(edb_hg, by="tx")
-introns_by_tx <- intronsByTranscript(edb_hg)
-```
-
-```{r}
-
-total_exon_length_by_tx <- lapply(exons_by_tx, get_length)
-
-total_exon_length_by_tx <-
-  total_exon_length_by_tx %>%
-  unlist() %>%
-  enframe( name = "ID", value = "exonic_len")
-
-total_intron_length_by_tx <- lapply(introns_by_tx, get_length)
-
-total_intron_length_by_tx <-
-  total_intron_length_by_tx %>%
-  unlist() %>%
-  enframe( name = "ID", value = "intronic_len")
-
-
-total_length_by_tx <- full_join(total_exon_length_by_tx,
-                                total_intron_length_by_tx, 
-                                by="ID")
-
-total_length_by_tx <-
-  total_length_by_tx %>%
-  dplyr::rename(TXID="ID")
-
-
-total_length_by_tx <-
-  left_join(total_length_by_tx,
-            df_hg,
-            by="TXID")
-
-
-total_length_by_tx <-
-  total_length_by_tx %>%
-  mutate(gene_len= abs(GENESEQEND- GENESEQSTART)+1)
-total_length_by_tx
-```
-## Add gene GC content variable
-
-
-```{r}
-#  searchAttributes(mart, pattern = "length")
-#listEnsemblArchives()
-mart <- useMart("ensembl", 
-                host="http://jul2019.archive.ensembl.org")
-mart <- useDataset("hsapiens_gene_ensembl",
-                   mart = mart)
-bm <- getBM(attributes=c("ensembl_gene_id",
-                         'percentage_gene_gc_content'),
-            filters = 'ensembl_gene_id',
-            values = total_length_by_tx$GENEID,
-            mart = mart)
-bm <-
-  bm %>%
-  dplyr::rename(GENEID="ensembl_gene_id")
-  
-```
-
-
-```{r}
-total_length_by_tx <-
-  left_join(total_length_by_tx,
-            bm,
-            by="GENEID")
-total_length_by_tx
-```
-
-
-```{r}
-write_csv( total_length_by_tx, "transcripts_hg_ens97_metadata.txt")
-```
-
-
-
-
-```{r message=FALSE, warning=FALSE, fig.height=4, fig.width=7}
-ggplot(total_length_by_tx %>%
-         dplyr::group_by(GENEID) %>%
-         dplyr::slice(1),
-       aes(percentage_gene_gc_content)) +
-  geom_histogram(bins = 170)  
-```
-
-
-```{r, fig.width=20}
-ggplot(total_length_by_tx %>%
-         dplyr::group_by(GENEID) %>%
-         dplyr::slice(1), 
-       aes(percentage_gene_gc_content, gene_len))+
-  geom_point(size=0.8,
-              alpha=0.7) +
-  geom_density_2d() +  
-   scale_y_log10() +
-   theme(legend.position="none")
-```
-
-
-
-
-
-
-```{r}
-total_length_by_tx_protein <-
-  total_length_by_tx %>% 
-  dplyr::filter(GENEBIOTYPE=="protein_coding")
-total_length_by_tx_protein
-```
-
-```{r message=FALSE, warning=FALSE, fig.height=4, fig.width=7}
-ggplot(total_length_by_tx_protein %>%
-         dplyr::group_by(GENEID) %>%
-         dplyr::slice(1),
-       aes(percentage_gene_gc_content)) +
-  geom_histogram(bins = 150)  
-```
-
-
-
-```{r, fig.width=20}
-ggplot(total_length_by_tx_protein%>%
-         dplyr::group_by(GENEID) %>%
-         dplyr::slice(1), 
-       aes(percentage_gene_gc_content, gene_len))+
-  geom_point(size=0.8,
-              alpha=0.7) +
-  geom_density_2d() +  
-   scale_y_log10() +
-   theme(legend.position="none")
-```
-
-
-```{r, fig.width=20}
-ggplot(total_length_by_tx_protein) +
-  geom_point( aes(exonic_len, intronic_len, colour=percentage_gene_gc_content),
-              size=0.05,
-              alpha=0.1)  +  
-  scale_x_log10() +
-   scale_y_log10() +
-  facet_wrap(~SEQNAME)
-
-```
-
-```{r, fig.width=20}
-ggplot(total_length_by_tx_protein %>%
-         dplyr::filter(SEQNAME=="chr22") )+
-  geom_point( aes(exonic_len, intronic_len, colour=gene_len),
-              size=0.8,
-              alpha=0.7) +
-  geom_density_2d(aes(exonic_len, intronic_len)) +  
-  scale_x_log10() +
-   scale_y_log10() +
-   theme(legend.position="none")
-```
-
-## Number of transcipts by gene
-
-```{r}
-count_tx_by_gene <-
-  total_length_by_tx_protein %>%
-  count(GENEID, GENENAME) %>%
-  arrange(-n)
-count_tx_by_gene 
-```
 
 Some gene names are not unique
 
 ```{r}
 duplicated_gene_names <-
-  count_tx_by_gene%>%
-  dplyr::filter( duplicated(GENENAME ))%>%
-  pull(GENENAME)
-duplicated_gene_names
+  gene_meta %>%
+  dplyr::filter( duplicated(gene_name))%>%
+  pull(gene_name)%>%
+  unique()
+  
+
+length(duplicated_gene_names)
 ```
 
 ```{r}
-count_tx_by_gene %>%
-  dplyr::filter(GENENAME%in% duplicated_gene_names ) %>%
-  arrange(GENENAME)
+gene_meta %>%
+  dplyr::filter(gene_name%in% duplicated_gene_names ) %>%
+  arrange(gene_name)
 ```
 
+
+### Gene Biotypes
+
+
+```{r}
+biotype_count <-
+  gene_meta %>% 
+  group_by(gene_biotype) %>% 
+  tally(sort = TRUE)
+biotype_count
+```
+
+```{r}
+biotype_targets <-
+  biotype_count %>%
+  slice(1:10)%>% 
+  pull(gene_biotype)
+```
+
+
+
+### Percentage of Gene GC Content
+
+
+```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
+ggplot(gene_meta %>%
+         filter(gene_biotype %in% biotype_targets),
+       aes(perc_gene_gc)) +
+  geom_histogram(bins = 150)   +
+  facet_wrap(~gene_biotype)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
+ggplot(gene_meta %>%
+         filter(gene_biotype %in% biotype_targets) ,
+       aes(gene_len)) +
+  geom_histogram(bins = 150)  +  
+   scale_x_log10() +
+  facet_wrap(~gene_biotype)
+```
+
+```{r, fig.width=20}
+ggplot(gene_meta %>%
+         filter(gene_biotype %in% biotype_targets), 
+       aes(perc_gene_gc, gene_len))+
+  geom_point(size=0.8,
+              alpha=0.7) +
+  geom_density_2d() +  
+   scale_y_log10() +
+   theme(legend.position="none") +
+  facet_wrap(~gene_biotype)
+```
+
+
+
+# Transcript Level 
+
+### Transcript Biotypes
+
+
+```{r}
+tx_biotype_count <-
+  tx_gene_meta %>% 
+  group_by(tx_biotype) %>% 
+  tally(sort = TRUE)
+tx_biotype_count
+```
+
+```{r}
+tx_biotype_targets <-
+  tx_biotype_count %>%
+  slice(1:8)%>% 
+  pull(tx_biotype)
+```
+
+## Exonic vs intronic lengths
+
+```{r, fig.width=16}
+ggplot(tx_gene_meta %>%
+         filter(tx_biotype %in% tx_biotype_targets)) +
+  geom_point( aes(exonic_len, intronic_len, colour=perc_gene_gc),
+              size=0.3,
+              alpha=0.6)  +  
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~tx_biotype) +
+  scale_colour_gradient2(midpoint=10, mid = "yellow")
+
+```
+
+
+
+
+
+
+
+
+## Exonic vs intronic counts
+
+
+```{r, fig.width=20}
+ggplot(tx_gene_meta %>%
+         filter(tx_biotype %in% tx_biotype_targets)) +
+  geom_point( aes(nexon, nintron, colour=gene_len),
+              size=0.8,
+              alpha=0.7)  +  
+  scale_x_log10() +
+   scale_y_log10()  +
+  facet_wrap(~tx_biotype) 
+```
+
+
+## Pre-mRNA vs Exonic lengths
+
+
+```{r, fig.width=20}
+ggplot(tx_gene_meta %>%
+         filter(tx_biotype %in% tx_biotype_targets & nexon!=1),
+       aes( premrna_len, exonic_len, colour=nexon)) +
+  geom_point( size=0.1,
+              alpha=0.3)  +    
+  geom_density_2d() +  
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~tx_biotype) 
+```
+
+## Exonic Counts vs Exonic lengths
+
+
+```{r, fig.width=20}
+ggplot(tx_gene_meta %>%
+         filter(tx_biotype %in% tx_biotype_targets ),
+       aes( nexon, exonic_len, colour=premrna_len)) +
+  geom_point( size=0.1,
+              alpha=0.3)  +    
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~tx_biotype) 
+```
+## Number of transcipts by gene
+
+```{r}
+count_tx_by_gene <-
+  tx_gene_meta %>%
+  count(gene_id,gene_name, gene_biotype) %>%
+  arrange(-n)
+count_tx_by_gene 
+```
 
 
 ```{r message=FALSE, warning=FALSE, fig.height=4, fig.width=7}
@@ -269,28 +226,38 @@ ggplot(count_tx_by_gene, aes(n)) +
 ```{r}
 top_genes <- 
   count_tx_by_gene %>%
-  top_n(20) %>%
-  pull(GENENAME)
+  slice(1:20) %>%
+  pull(gene_name)
 top_genes
 ```
 
 
-```{r fig.height=8}
-ggplot(total_length_by_tx_protein %>% 
-         dplyr::filter(GENENAME%in% top_genes))+
-  geom_point( aes(exonic_len, intronic_len, colour=gene_len),
-              size=0.8,
-              alpha=0.7) +
-  facet_wrap(~GENENAME)
+```{r fig.height=15}
+ggplot(tx_gene_meta %>% 
+         dplyr::filter(gene_name%in% top_genes))+
+  geom_point( aes(exonic_len, intronic_len, colour=nexon >=10)) +
+  facet_wrap(gene_biotype~gene_name,   scales = "free")
 ```
 
 
+
+
 ```{r}
-ggplot(total_length_by_tx_protein %>% 
-         dplyr::filter(GENENAME=="TSC2"))+
-  geom_point( aes(exonic_len, intronic_len),
-              size=0.8,
-              alpha=0.7)
+tx_10_genes <- 
+  count_tx_by_gene %>%
+  filter(n==10) %>%
+  slice(1:20) %>%
+  pull(gene_name)
+```
+
+
+
+```{r fig.height=15}
+ggplot(tx_gene_meta %>% 
+         dplyr::filter(gene_name%in% tx_10_genes))+
+  geom_point( aes(exonic_len, intronic_len, colour=nexon >=10)) +
+  facet_wrap(~gene_name,  scales = "free") 
+  
 ```
 
 
@@ -298,21 +265,74 @@ ggplot(total_length_by_tx_protein %>%
 single_transcript_genes <-
   count_tx_by_gene %>% 
   dplyr::filter(n==1) %>% 
-  pull(GENENAME)
-
+  pull(gene_name)
+length(single_transcript_genes)
 ```
 
 
 
 ```{r fig.height=8}
-ggplot(total_length_by_tx_protein %>% 
-         dplyr::filter(GENENAME%in% single_transcript_genes ))+
-  geom_point( aes(exonic_len, intronic_len, colour=gene_len),
-              size=0.8,
-              alpha=0.7)  +  
+ggplot(tx_gene_meta  %>% 
+         dplyr::filter(gene_name%in% single_transcript_genes & gene_biotype %in% biotype_targets ))+
+  geom_point( aes(exonic_len, intronic_len,  colour=perc_gene_gc),
+              size=0.2,
+              alpha=0.5)  +  
   scale_x_log10() +
-   scale_y_log10()
+   scale_y_log10() +
+  facet_wrap(~tx_biotype)  +
+  scale_colour_gradient2(midpoint=10, mid = "yellow")
+
 ```
+
+# Single exon transcripts
+
+
+```{r}
+  tx_gene_meta %>%
+  count(nexon ) %>%
+  arrange(-n)
+```
+
+
+
+
+```{r fig.height=10}
+ggplot(tx_gene_meta %>% 
+         dplyr::filter(tx_biotype %in% tx_biotype_targets & nexon== 2)) +
+  geom_point( aes(exonic_len, intronic_len,  colour=perc_gene_gc),
+              size=0.2,
+              alpha=0.5)  +  
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~tx_biotype)  +
+  scale_colour_gradient2(midpoint=10, mid = "yellow")
+```
+
+
+```{r fig.height=10}
+ggplot(tx_gene_meta %>% 
+         dplyr::filter(tx_biotype %in% tx_biotype_targets & nexon< 10 & nexon> 1)) +
+  geom_point( aes(exonic_len, intronic_len,  colour=perc_gene_gc),
+              size=0.2,
+              alpha=0.5)  +  
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~tx_biotype)  +
+  scale_colour_gradient2(midpoint=10, mid = "yellow")
+```
+
+```{r fig.height=10}
+ggplot(tx_gene_meta %>% 
+         dplyr::filter(tx_biotype %in% tx_biotype_targets & nexon>= 10)) +
+  geom_point( aes(exonic_len, intronic_len,  colour=perc_gene_gc),
+              size=0.2,
+              alpha=0.5)  +  
+  scale_x_log10() +
+   scale_y_log10() +
+  facet_wrap(~tx_biotype)  +
+  scale_colour_gradient2(midpoint=10, mid = "yellow")
+```
+
 
 
 
