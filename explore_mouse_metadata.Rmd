@@ -28,7 +28,7 @@ library(tidyverse)
 
 
 
-```{r message=TRUE}
+```{r message=FALSE, warning=FALSE}
 tx_gene_meta <- read_csv("./data/mm_ens97_metadata.txt")
 tx_gene_meta
 ```
@@ -43,7 +43,7 @@ gene_meta <-
          dplyr::group_by(gene_id) %>%
          dplyr::slice(1) %>%
   ungroup() %>%
-  select(gene_name, gene_len, perc_gene_gc, gene_id, seqnames, gene_biotype)
+  select(gene_name, gene_len, perc_gene_gc, gene_id, seqnames, gene_biotype, gene_id_version)
 gene_meta
 ```
 

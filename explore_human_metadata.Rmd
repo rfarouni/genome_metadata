@@ -15,6 +15,9 @@ output: html_notebook
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file(), 
                      fig.width=14,
                      fig.height=14)
+options(readr.show_progress = FALSE,
+        digits=5, 
+        scipen=8)
 set.seed(42)
 ```
 
@@ -28,7 +31,7 @@ library(tidyverse)
 
 
 
-```{r message=TRUE}
+```{r message=FALSE, warning=FALSE}
 tx_gene_meta <- read_csv("./data/hg_ens97_metadata.txt")
 tx_gene_meta
 ```
@@ -40,10 +43,10 @@ tx_gene_meta
 ```{r}
 gene_meta <- 
   tx_gene_meta %>%
-         dplyr::group_by(gene_id) %>%
+         dplyr::group_by(gene_id_version) %>%
          dplyr::slice(1) %>%
   ungroup() %>%
-  select(gene_name, gene_len, perc_gene_gc, gene_id, seqnames, gene_biotype)
+  select(gene_name, gene_len, perc_gene_gc, gene_id, seqnames, gene_biotype, gene_id_version)
 gene_meta
 ```
 

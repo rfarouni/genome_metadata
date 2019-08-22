@@ -51,7 +51,7 @@ get_transcriptome <- function(ah_id) {
 
 get_gc_content <- function(dataset){
   
-  # searchAttributes(mart, pattern = "UCSC")
+  # searchAttributes(mart, pattern = "ensembl_gene_id")
   #listDatasets(mart)
   
   mart <- useMart("ensembl", 
@@ -60,12 +60,14 @@ get_gc_content <- function(dataset){
                    mart = mart)
   gc_content_ens97 <-  getBM(attributes=c(
                          "ensembl_gene_id",
+                         "ensembl_gene_id_version",
                          'percentage_gene_gc_content'),
             mart = mart)
   
   gc_content_ens97 <- 
     gc_content_ens97%>%
    dplyr::rename(gene_id="ensembl_gene_id",
+                 gene_id_version="ensembl_gene_id_version",
                  perc_gene_gc="percentage_gene_gc_content")
 
   return(gc_content_ens97)
@@ -162,7 +164,7 @@ create_tx_gene_metadata <- function(ah_id, dataset){
   tx_gene_meta %>%
    dplyr::select(tx_id, gene_name, gene_len, premrna_len, intronic_len, exonic_len,
                  cds_len, utr5_len, utr3_len, nexon, nintron, perc_gene_gc,
-                 gene_id, seqnames, gene_biotype, tx_biotype, tx_id_version)
+                 gene_id, seqnames, gene_biotype, tx_biotype, tx_id_version, gene_id_version)
   return(tx_gene_meta)
 }
 
@@ -183,7 +185,7 @@ mm10_tx_gene_meta
 ```{r}
 hg38_tx_gene_meta <- 
   create_tx_gene_metadata("AH73881",
-                          "hsapiens_gene_ensembl")
+                         "hsapiens_gene_ensembl")
 hg38_tx_gene_meta 
 ```
 
