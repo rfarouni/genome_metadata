@@ -34,6 +34,8 @@ options(readr.show_progress = FALSE,
 library(tidyverse)
 library(AnnotationHub)
 library(biomaRt)
+library(zeallot)
+
 ```
 
 ## Define functions
@@ -59,29 +61,30 @@ get_gc_content <- function(dataset){
   mart <- useDataset(dataset,
                    mart = mart)
   gc_content_ens97 <-  getBM(attributes=c(
-                         "ensembl_gene_id",
                          "ensembl_gene_id_version",
                          'percentage_gene_gc_content'),
             mart = mart)
   
   gc_content_ens97 <- 
     gc_content_ens97%>%
-   dplyr::rename(gene_id="ensembl_gene_id",
-                 gene_id_version="ensembl_gene_id_version",
+   dplyr::rename(gene_id_version="ensembl_gene_id_version",
                  perc_gene_gc="percentage_gene_gc_content")
 
   return(gc_content_ens97)
 }
 
 get_gene_metadata <- function(edb, dataset) {
-  
+  # remove LRG genes https://www.lrg-sequence.org/faq/
    gene_meta  <- 
-   genes(edb) %>% 
+   genes(edb, filter = GeneIdFilter("ENS", "startsWith")) %>% 
    as.data.frame() %>%
    dplyr::select(gene_id,
+                 seqnames,
                  width,
                  gene_name, 
-                 gene_biotype) %>%
+                 gene_biotype,
+                 gene_id_version,
+                 description) %>%
    dplyr::rename(gene_len="width")
    
   gc_content_ens97 <- get_gc_content(dataset)
@@ -89,7 +92,10 @@ get_gene_metadata <- function(edb, dataset) {
   gene_meta <- 
   left_join(gene_meta,
             gc_content_ens97,
-            by="gene_id")
+            by="gene_id_version")  %>%
+   dplyr::select(gene_name, gene_len, perc_gene_gc,
+                 gene_id, seqnames, gene_biotype, 
+                 gene_id_version, description)
    
    return(gene_meta)
    
@@ -142,7 +148,8 @@ tx_meta <-
 
 tx_meta <- 
   tx_meta %>%
-  mutate(intronic_len=premrna_len -tx_len)  %>%
+  mutate(intronic_len=premrna_len -tx_len,
+         seqnames=NULL)  %>%
   dplyr::rename(exonic_len="tx_len")
 
 
@@ -164,8 +171,8 @@ create_tx_gene_metadata <- function(ah_id, dataset){
   tx_gene_meta %>%
    dplyr::select(tx_id, gene_name, gene_len, premrna_len, intronic_len, exonic_len,
                  cds_len, utr5_len, utr3_len, nexon, nintron, perc_gene_gc,
-                 gene_id, seqnames, gene_biotype, tx_biotype, tx_id_version, gene_id_version)
-  return(tx_gene_meta)
+                 gene_id, seqnames, gene_biotype, tx_biotype, tx_id_version, gene_id_version, description)
+  return(list(tx_gene_meta=tx_gene_meta, gene_meta=gene_meta))
 }
 
 ```
@@ -175,26 +182,34 @@ create_tx_gene_metadata <- function(ah_id, dataset){
 
 ```{r}
 
-mm10_tx_gene_meta <- 
+ c(mm10_tx_gene_meta, mm10_gene_meta) %<-%
   create_tx_gene_metadata("AH73905",
                           "mmusculus_gene_ensembl")
 mm10_tx_gene_meta 
 ```
 
+```{r}
+mm10_gene_meta
+```
+
 
 ```{r}
-hg38_tx_gene_meta <- 
+c(hg38_tx_gene_meta, hg38_gene_meta) %<-% 
   create_tx_gene_metadata("AH73881",
                          "hsapiens_gene_ensembl")
 hg38_tx_gene_meta 
+```
+```{r}
+hg38_gene_meta
 ```
 
 ## Write to file
 
 ```{r}
-write_csv( mm10_tx_gene_meta, "./data/mm_ens97_metadata.txt")
-write_csv( hg38_tx_gene_meta, "./data/hg_ens97_metadata.txt")
-
+write_csv( mm10_tx_gene_meta, "./data/mm10_ens97_transcript_meta.txt")
+write_csv( mm10_gene_meta, "./data/mm10_ens97_gene_meta.txt")
+write_csv( hg38_tx_gene_meta, "./data/hg38_ens97_transcript_meta.txt")
+write_csv( hg38_gene_meta, "./data/hg38_ens97_gene_meta.txt")
 ```
 
 ```{r}
